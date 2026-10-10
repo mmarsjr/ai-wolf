@@ -1,4 +1,4 @@
-```typescript
+
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
@@ -23,11 +23,11 @@ export async function POST(request: Request) {
       signature,
       webhookSecret
     );
-  } catch (e) {
+  } catch (error) {
     return NextResponse.json(
       {
         error: `Invalid webhook signature: ${
-          e instanceof Error ? e.message : 'unknown error'
+          error instanceof Error ? error.message : 'unknown error'
         }`,
       },
       { status: 400 }
@@ -39,6 +39,7 @@ export async function POST(request: Request) {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('Supabase environment variables are missing.');
+
     return NextResponse.json(
       { error: 'Webhook database configuration missing.' },
       { status: 500 }
@@ -61,18 +62,22 @@ export async function POST(request: Request) {
             ? session.subscription
             : session.subscription.id;
 
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        const sub =
+          await stripe.subscriptions.retrieve(subscriptionId);
+
         const periodEnd = sub.current_period_end;
 
-        const { error } = await supabase
+        const customerId =
+          typeof session.customer === 'string'
+            ? session.customer
+            : session.customer?.id ?? null;
+
+        const { error: dbError } = await supabase
           .from('subscriptions')
           .upsert(
             {
               user_id: userId,
-              stripe_customer_id:
-                typeof session.customer === 'string'
-                  ? session.customer
-                  : session.customer?.id ?? null,
+              stripe_customer_id: customerId,
               stripe_subscription_id: sub.id,
               status: sub.status,
               current_period_end:
@@ -83,7 +88,9 @@ export async function POST(request: Request) {
             { onConflict: 'user_id' }
           );
 
-        if (error) throw error;
+        if (dbError) {
+          throw dbError;
+        }
       }
     }
 
@@ -97,15 +104,17 @@ export async function POST(request: Request) {
       if (userId) {
         const periodEnd = sub.current_period_end;
 
-        const { error } = await supabase
+        const customerId =
+          typeof sub.customer === 'string'
+            ? sub.customer
+            : sub.customer.id;
+
+        const { error: dbError } = await supabase
           .from('subscriptions')
           .upsert(
             {
               user_id: userId,
-              stripe_customer_id:
-                typeof sub.customer === 'string'
-                  ? sub.customer
-                  : sub.customer.id,
+              stripe_customer_id: customerId,
               stripe_subscription_id: sub.id,
               status: sub.status,
               current_period_end:
@@ -116,13 +125,15 @@ export async function POST(request: Request) {
             { onConflict: 'user_id' }
           );
 
-        if (error) throw error;
+        if (dbError) {
+          throw dbError;
+        }
       }
     }
 
     return NextResponse.json({ received: true });
-  } catch (e) {
-    console.error('Webhook database update failed:', e);
+  } catch (error) {
+    console.error('Webhook database update failed:', error);
 
     return NextResponse.json(
       { error: 'Webhook processing failed.' },
@@ -130,4 +141,3 @@ export async function POST(request: Request) {
     );
   }
 }
-```
