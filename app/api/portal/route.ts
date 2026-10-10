@@ -1,0 +1,4 @@
+import { NextResponse } from 'next/server';
+import { createSupabaseServerClient } from '@/lib/supabase-server';
+import { stripe } from '@/lib/stripe';
+export async function POST(){try{const supabase=await createSupabaseServerClient();const {data:{user}}=await supabase.auth.getUser();if(!user)return NextResponse.json({error:'Please sign in.'},{status:401});const {data}=await supabase.from('subscriptions').select('stripe_customer_id').eq('user_id',user.id).maybeSingle();if(!data?.stripe_customer_id)return NextResponse.json({error:'No billing customer found for this account.'},{status:404});const session=await stripe.billingPortal.sessions.create({customer:data.stripe_customer_id,return_url:`${process.env.NEXT_PUBLIC_SITE_URL||'http://localhost:3000'}/dashboard`});return NextResponse.json({url:session.url})}catch(e){console.error('portal error',e);return NextResponse.json({error:'Could not open billing portal.'},{status:500})}}
