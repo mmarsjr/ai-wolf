@@ -68,11 +68,11 @@ export async function POST(request: Request) {
         const periodEnd = sub.current_period_end;
 
         const customerId =
-          typeof session.customer === 'string'
-            ? session.customer
-            : session.customer?.id ?? null;
+          typeof sub.customer === 'string'
+            ? sub.customer
+            : sub.customer.id;
 
-        const { error: dbError } = await supabase
+        const { error } = await supabase
           .from('subscriptions')
           .upsert(
             {
@@ -88,8 +88,8 @@ export async function POST(request: Request) {
             { onConflict: 'user_id' }
           );
 
-        if (dbError) {
-          throw dbError;
+        if (error) {
+          throw error;
         }
       }
     }
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
             ? sub.customer
             : sub.customer.id;
 
-        const { error: dbError } = await supabase
+        const { error } = await supabase
           .from('subscriptions')
           .upsert(
             {
@@ -125,8 +125,8 @@ export async function POST(request: Request) {
             { onConflict: 'user_id' }
           );
 
-        if (dbError) {
-          throw dbError;
+        if (error) {
+          throw error;
         }
       }
     }
