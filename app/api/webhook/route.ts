@@ -13,7 +13,26 @@ export async function POST(request:Request){
   }
   if(event.type==='customer.subscription.updated'||event.type==='customer.subscription.deleted'){
    const sub=event.data.object as Stripe.Subscription;const userId=sub.metadata?.supabase_user_id;
-   if(userId)await supabase.from('subscriptions').upsert({user_id:userId,stripe_customer_id:String(sub.customer),stripe_subscription_id:sub.id,status:sub.status,current_period_end: new Date(
+   
+if (userId) {
+  const periodEnd = sub.current_period_end;
+
+  await supabase.from('subscriptions').upsert(
+    {
+      user_id: userId,
+      stripe_customer_id: String(sub.customer),
+      stripe_subscription_id: sub.id,
+      status: sub.status,
+      current_period_end: new Date(
+        typeof periodEnd === 'number'
+          ? periodEnd * 1000
+          : Date.now()
+      ).toISOString(),
+    },
+    { onConflict: 'user_id' }
+  );
+}
+user_id:userId,stripe_customer_id:String(sub.customer),stripe_subscription_id:sub.id,status:sub.status,current_period_end: new Date(
   (sub as Stripe.Subscription).current_period_end * 1000
 ).toISOString():new Date(sub.current_period_end?sub.current_period_end*1000:Date.now()).toISOString()},{onConflict:'user_id'});
   }
