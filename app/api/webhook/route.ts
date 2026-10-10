@@ -1,4 +1,4 @@
-
+```typescript
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
@@ -39,7 +39,6 @@ export async function POST(request: Request) {
 
   if (!supabaseUrl || !serviceRoleKey) {
     console.error('Supabase environment variables are missing.');
-
     return NextResponse.json(
       { error: 'Webhook database configuration missing.' },
       { status: 500 }
@@ -63,13 +62,7 @@ export async function POST(request: Request) {
             : session.subscription.id;
 
         const sub = await stripe.subscriptions.retrieve(subscriptionId);
-
         const periodEnd = sub.current_period_end;
-
-        const currentPeriodEnd =
-          typeof periodEnd === 'number'
-            ? new Date(periodEnd * 1000)
-            : null;
 
         const { error } = await supabase
           .from('subscriptions')
@@ -83,7 +76,9 @@ export async function POST(request: Request) {
               stripe_subscription_id: sub.id,
               status: sub.status,
               current_period_end:
-                currentPeriodEnd?.toISOString() ?? null,
+                typeof periodEnd === 'number'
+                  ? new Date(periodEnd * 1000).toISOString()
+                  : null,
             },
             { onConflict: 'user_id' }
           );
@@ -135,3 +130,4 @@ export async function POST(request: Request) {
     );
   }
 }
+```
