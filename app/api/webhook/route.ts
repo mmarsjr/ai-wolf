@@ -1,8 +1,54 @@
-
 import { NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe } from '@/lib/stripe';
 import { createClient } from '@supabase/supabase-js';
+
+type SubscriptionRecord = {
+  id: string;
+  status: string;
+  customer: string | { id: string };
+  metadata?: Record<string, string>;
+  current_period_end?: number;
+  items?: {
+    data?: Array<{
+      current_period_end?: number;
+    }>;
+  };
+};
+
+function unwrapSubscription(value: unknown): SubscriptionRecord {
+  const outer = value as {
+    data?: SubscriptionRecord;
+    id?: string;
+    status?: string;
+    customer?: string | { id: string };
+  };
+
+  const subscription =
+    outer?.data && typeof outer.data === 'object'
+      ? outer.data
+      : (value as SubscriptionRecord);
+
+  return subscription;
+}
+
+function getPeriodEnd(subscription: SubscriptionRecord): string | null {
+  const itemEnd = subscription.items?.data?.[0]?.current_period_end;
+  const periodEnd =
+    typeof subscription.current_period_end === 'number'
+      ? subscription.current_period_end
+      : itemEnd;
+
+  return typeof periodEnd === 'number'
+    ? new Date(periodEnd * 1000).toISOString()
+    : null;
+}
+
+function getCustomerId(
+  customer: string | { id: string }
+): string {
+  return typeof customer === 'string' ? customer : customer.id;
+}
 
 export async function POST(request: Request) {
   const signature = request.headers.get('stripe-signature');
@@ -62,28 +108,20 @@ export async function POST(request: Request) {
             ? session.subscription
             : session.subscription.id;
 
-        const sub =
+        const response =
           await stripe.subscriptions.retrieve(subscriptionId);
 
-        const periodEnd = sub.current_period_end;
-
-        const customerId =
-          typeof sub.customer === 'string'
-            ? sub.customer
-            : sub.customer.id;
+        const sub = unwrapSubscription(response);
 
         const { error } = await supabase
           .from('subscriptions')
           .upsert(
             {
               user_id: userId,
-              stripe_customer_id: customerId,
+              stripe_customer_id: getCustomerId(sub.customer),
               stripe_subscription_id: sub.id,
               status: sub.status,
-              current_period_end:
-                typeof periodEnd === 'number'
-                  ? new Date(periodEnd * 1000).toISOString()
-                  : null,
+              current_period_end: getPeriodEnd(sub),
             },
             { onConflict: 'user_id' }
           );
@@ -98,29 +136,19 @@ export async function POST(request: Request) {
       event.type === 'customer.subscription.updated' ||
       event.type === 'customer.subscription.deleted'
     ) {
-      const sub = event.data.object as Stripe.Subscription;
+      const sub = unwrapSubscription(event.data.object);
       const userId = sub.metadata?.supabase_user_id;
 
       if (userId) {
-        const periodEnd = sub.current_period_end;
-
-        const customerId =
-          typeof sub.customer === 'string'
-            ? sub.customer
-            : sub.customer.id;
-
         const { error } = await supabase
           .from('subscriptions')
           .upsert(
             {
               user_id: userId,
-              stripe_customer_id: customerId,
+              stripe_customer_id: getCustomerId(sub.customer),
               stripe_subscription_id: sub.id,
               status: sub.status,
-              current_period_end:
-                typeof periodEnd === 'number'
-                  ? new Date(periodEnd * 1000).toISOString()
-                  : null,
+              current_period_end: getPeriodEnd(sub),
             },
             { onConflict: 'user_id' }
           );
@@ -133,7 +161,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ received: true });
   } catch (error) {
-    console.error('Webhook database update failed:', error);
+    console.error('Webhook processing failed:', error);
 
     return NextResponse.json(
       { error: 'Webhook processing failed.' },
